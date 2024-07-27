@@ -25,6 +25,25 @@ float max_of_three(float m, float n, float p)
     return max_of_two(max_of_two(m, n), p);
 }
 
+bool close_to_white(uint8_t R, uint8_t G, uint8_t B)
+{
+  return ((fabs(R - G) <= 5) && (fabs(G - B) <= 5));
+}
+
+RGBW rgbw_from_rgb(RGBW rgb) {
+  uint8_t Ri = rgb.r;
+  uint8_t Gi = rgb.g;
+  uint8_t Bi = rgb.b;
+  uint8_t minVal = min(Ri, min(Gi, Bi));
+  
+  rgb.w= minVal;
+  rgb.b = Bi - minVal;
+  rgb.r = Ri - minVal;
+  rgb.g = Gi - minVal;
+  
+  return rgb;
+}
+
 RGBW color_xy_brightness_to_rgb(float vX, float vY, uint8_t ibrightness)
 {
     float brightness = ibrightness / 255.0;
@@ -70,21 +89,32 @@ RGBW color_xy_brightness_to_rgb(float vX, float vY, uint8_t ibrightness)
     uint8_t ir = (uint8_t)(r * 255);
     uint8_t ig = (uint8_t)(g * 255);
     uint8_t ib = (uint8_t)(b * 255);
-
-    if (ir > 240 && ig > 240 && ib > 240)
+    /*
+    if (close_to_white(ir, ig, ib))
     {
+        // This should be able to handle brightness, so really should be if
+        // RGB are within a percent of each other
+        result.r = 0;
+        result.g = 0;
+        result.b = 0;
         result.w = ibrightness;
         return result;
-    }
+    }*/
     result.r = ir;
     result.g = ig;
     result.b = ib;
     result.w = 0;
-    return result;
+    RGBW result_with_white = rgbw_from_rgb(result);
+    return result_with_white;
 }
 
 RGBW color_int_xy_brightness_to_rgb(uint16_t vX, uint16_t vY, uint8_t ibrightness) {
     float color_x = vX/65536.0;
     float color_y = vY/65536.0;
+    Serial.print(F("Float Colors: vX: "));
+    Serial.print(color_x, DEC);
+    Serial.print(F(" vY: "));
+    Serial.println(color_y);
     return color_xy_brightness_to_rgb(color_x, color_y, ibrightness);
 }
+

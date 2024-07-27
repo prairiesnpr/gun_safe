@@ -29,6 +29,7 @@
 #define START_LOOPS 100
 
 uint8_t start_fails = 0;
+uint8_t init_status_sent = 0;
 
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
@@ -56,6 +57,11 @@ void setup()
   pinMode(BLUE_PIN, OUTPUT);
   pinMode(GREEN_PIN, OUTPUT);
   pinMode(WHITE_PIN, OUTPUT);
+  
+  digitalWrite(RED_PIN, 0);
+  digitalWrite(GREEN_PIN, 0);
+  digitalWrite(BLUE_PIN, 0);
+  digitalWrite(WHITE_PIN, 0);
 
   // Reset xbee
   digitalWrite(XBEE_RST, LOW);
@@ -135,9 +141,19 @@ void set_led()
   attribute *clr_y_attr = clr_clstr.GetAttr(ATTR_CURRENT_Y);
   Cluster lvl_clstr = end_point.GetCluster(LEVEL_CONTROL_CLUSTER_ID);
   attribute *lvl_attr = lvl_clstr.GetAttr(CURRENT_STATE);
+  Cluster on_off_clstr = end_point.GetCluster(ON_OFF_CLUSTER_ID);
+  attribute *on_off_attr = on_off_clstr.GetAttr(CURRENT_STATE);
+
   uint16_t color_x = clr_x_attr->GetIntValue();
-  uint16_t color_y = clr_x_attr->GetIntValue();
+  uint16_t color_y = clr_y_attr->GetIntValue();
   uint8_t ibrightness = lvl_attr->GetIntValue();
+  Serial.print(F("Color: X: "));
+  Serial.print(color_x, DEC);
+  Serial.print(F(" Y: "));
+  Serial.print(color_y, DEC);
+  Serial.print(F(" B: "));
+  Serial.println(ibrightness, DEC);
+
   RGBW result = color_int_xy_brightness_to_rgb(color_x, color_y, ibrightness);
 
   Serial.print(F("R: "));
@@ -149,6 +165,27 @@ void set_led()
   Serial.print(F(" W: "));
   Serial.print(result.w, DEC);
   Serial.println();
+  if (on_off_attr->GetIntValue()) {
+    Serial.println(F("Apply RGB"));
+    result.r = pow(0xff, result.r/(float)0xff);
+    result.g = pow(0xff, result.g/(float)0xff);
+    result.b = pow(0xff, result.b/(float)0xff);
+    result.w = pow(0xff, result.w/(float)0xff);
+
+    analogWrite(GREEN_PIN, result.g);
+    analogWrite(BLUE_PIN, result.b);
+    analogWrite(RED_PIN, result.r);
+    analogWrite(WHITE_PIN, result.w);
+  }
+  else {
+    Serial.println(F("All LED OFF"));
+    analogWrite(GREEN_PIN, 0);
+    analogWrite(BLUE_PIN, 0);
+    analogWrite(RED_PIN, 0);
+    analogWrite(WHITE_PIN, 0);
+
+  }
+
 }
 
 void SetClrAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t color_x, uint16_t color_y, uint8_t rqst_seq_id)
@@ -186,17 +223,15 @@ void SetLvlStAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t attr_id, uint8_t 
   Endpoint end_point = zha.GetEndpoint(ep_id);
   Cluster cluster = end_point.GetCluster(cluster_id);
   attribute *attr = cluster.GetAttr(attr_id);
+  Serial.print(F("Val: "));
+  Serial.println(value, HEX);
   if (cluster_id == ON_OFF_CLUSTER_ID)
   {
-    if (value == 0x00)
+    if (value == 0x00 || value == 0x01)
     {
       zha.sendAttributeWriteRsp(cluster_id, attr, ep_id, 1, value, rqst_seq_id);
-      *attr->value = value;
-    }
-    else if (value == 0x01)
-    {
-      zha.sendAttributeWriteRsp(cluster_id, attr, ep_id, 1, value, rqst_seq_id);
-      *attr->value = value;
+      attr->SetValue(value);
+      set_led();
     }
     else
     {
@@ -206,7 +241,7 @@ void SetLvlStAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t attr_id, uint8_t 
   else if (cluster_id == LEVEL_CONTROL_CLUSTER_ID)
   {
     zha.sendAttributeWriteRsp(cluster_id, attr, ep_id, 1, value, rqst_seq_id);
-    *attr->value = value;
+    attr->SetValue(value);
     set_led();
   }
   else
@@ -220,8 +255,13 @@ void loop()
 
   if (zha.dev_status == READY)
   {
+    
     uint8_t door_state = digitalRead(DOOR_PIN) ^ 1;
     uint8_t ias_state = digitalRead(VIBRATION_PIN);
+
+    Endpoint light_end_point = zha.GetEndpoint(LIGHT_ENDPOINT);
+    Cluster on_off_clstr = light_end_point.GetCluster(ON_OFF_CLUSTER_ID);
+    attribute *on_off_attr = on_off_clstr.GetAttr(CURRENT_STATE);
 
     Endpoint door_end_point = zha.GetEndpoint(DOOR_ENDPOINT);
     Cluster door_cluster = door_end_point.GetCluster(BINARY_INPUT_CLUSTER_ID);
@@ -232,6 +272,7 @@ void loop()
     attribute *ias_attr = ias_cluster.GetAttr(IAS_ZONE_STATUS);
     uint16_t ias_map_state = (uint16_t)ias_state << 1;
     uint16_t cur_ias_state = (uint16_t)ias_attr->GetIntValue();
+      
 
     if (ias_map_state != cur_ias_state)
     {
@@ -261,11 +302,47 @@ void loop()
         Serial.print(F(" Now "));
         door_attr->SetValue(door_state);
         Serial.println(door_attr->GetIntValue());
+
+      
+        if (door_state) {
+         on_off_attr->SetValue(0x01); 
+        }
+        else {
+          on_off_attr->SetValue(0x00);
+        }
+
         zha.sendAttributeRpt(door_cluster.id, door_attr, door_end_point.id, 1);
+        zha.sendAttributeRpt(on_off_clstr.id, on_off_attr, light_end_point.id, 1);
+        set_led(); 
       }
     }
 
     doorLastState = door_state;
+    if (!init_status_sent)
+    {
+      Serial.println(F("Snd Init States"));
+      init_status_sent = 1;
+      zha.sendAttributeRpt(door_cluster.id, door_attr, door_end_point.id, 1);
+      zha.sendAttributeRpt(ias_cluster.id, ias_attr, ias_end_point.id, 1);
+
+      Cluster color_cluster = light_end_point.GetCluster(COLOR_CLUSTER_ID);
+      attribute *color_x_attr = color_cluster.GetAttr(ATTR_CURRENT_X);
+      attribute *color_y_attr = color_cluster.GetAttr(ATTR_CURRENT_Y);
+
+
+      Cluster lvl_clstr = light_end_point.GetCluster(LEVEL_CONTROL_CLUSTER_ID);
+      attribute *lvl_attr = lvl_clstr.GetAttr(CURRENT_STATE);
+
+      //This should happen in device description, but not working
+      lvl_attr->SetValue(255);
+      color_x_attr->SetValue(21364);
+      color_y_attr->SetValue(21823);
+
+      zha.sendAttributeRpt(on_off_clstr.id, on_off_attr, light_end_point.id, 1);
+      zha.sendAttributeRpt(lvl_clstr.id, lvl_attr, light_end_point.id, 1);
+      zha.sendAttributeRpt(color_cluster.id, color_x_attr, light_end_point.id, 1);
+      zha.sendAttributeRpt(color_cluster.id, color_y_attr, light_end_point.id, 1);
+    }
   }
   else if ((loop_time - last_msg_time) > 1000)
   {
@@ -349,9 +426,10 @@ void zdoReceive(ZBExplicitRxResponse &erx, uintptr_t)
             Serial.print(F(" "));
           }
           Serial.println();
+          uint8_t new_state = erx.getFrameData()[erx.getDataOffset() + 3];
           Endpoint end_point = zha.GetEndpoint(ep);
 
-          SetLvlStAttr(ep, clId, CURRENT_STATE, erx.getFrameData()[3], erx.getFrameData()[erx.getDataOffset() + 1]);
+          SetLvlStAttr(ep, clId, CURRENT_STATE, new_state, erx.getFrameData()[erx.getDataOffset() + 1]);
         }
         if (clId == COLOR_CLUSTER_ID)
         {

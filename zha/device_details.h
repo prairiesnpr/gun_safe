@@ -23,10 +23,10 @@ static attribute door_attr[] = {
 static attribute light_bool_attr[]{
     {CURRENT_STATE, 0x00, 1, ZCL_BOOL}};
 static attribute light_level_attr[]{
-    {CURRENT_STATE, 0x00, 1, ZCL_UINT8_T}};
+    {CURRENT_STATE, 0xFF, 1, ZCL_UINT8_T}};
 static attribute light_color_attr[] = {
-    {ATTR_CURRENT_X, 0x00, 2, ZCL_UINT16_T},      // CurrentX
-    {ATTR_CURRENT_Y, 0x00, 2, ZCL_UINT16_T},      // CurrentY
+    {ATTR_CURRENT_X, 21364, 2, ZCL_UINT16_T},      // CurrentX
+    {ATTR_CURRENT_Y, 21823, 2, ZCL_UINT16_T},      // CurrentY
     {ATTR_CURRENT_CT_MRDS, 0x00, 2, ZCL_UINT16_T} // ColorTemperatureMireds
 };
 static attribute vibration_attr[]{
