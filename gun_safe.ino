@@ -93,7 +93,7 @@ void update_temp()
       Serial.print(event.temperature);
       Serial.println(F("°C"));
       Cluster t_cluster = end_point.GetCluster(TEMP_CLUSTER_ID);
-      attribute *t_attr = t_cluster.GetAttr(0x0000);
+      attribute *t_attr = t_cluster.GetAttr(CURRENT_STATE);
       int16_t cor_t = (int16_t)(event.temperature * 100.0);
       t_attr->SetValue(cor_t);
       Serial.print((int16_t)t_attr->GetIntValue());
@@ -112,7 +112,7 @@ void update_temp()
       Serial.print(event.relative_humidity);
       Serial.println(F("%"));
       Cluster h_cluster = end_point.GetCluster(HUMIDITY_CLUSTER_ID);
-      attribute *h_attr = h_cluster.GetAttr(0x0000);
+      attribute *h_attr = h_cluster.GetAttr(CURRENT_STATE);
       uint16_t cor_h = (uint16_t)(event.relative_humidity * 100.0);
       h_attr->SetValue(cor_h);
       zha.sendAttributeRpt(h_cluster.id, h_attr, end_point.id, 1);
@@ -134,7 +134,7 @@ void set_led()
   attribute *clr_x_attr = clr_clstr.GetAttr(ATTR_CURRENT_X);
   attribute *clr_y_attr = clr_clstr.GetAttr(ATTR_CURRENT_Y);
   Cluster lvl_clstr = end_point.GetCluster(LEVEL_CONTROL_CLUSTER_ID);
-  attribute *lvl_attr = lvl_clstr.GetAttr(0x0000);
+  attribute *lvl_attr = lvl_clstr.GetAttr(CURRENT_STATE);
   uint16_t color_x = clr_x_attr->GetIntValue();
   uint16_t color_y = clr_x_attr->GetIntValue();
   uint8_t ibrightness = lvl_attr->GetIntValue();
@@ -155,13 +155,13 @@ void SetClrAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t color_x, uint16_t c
 {
   Endpoint end_point = zha.GetEndpoint(ep_id);
   Cluster cluster = end_point.GetCluster(cluster_id);
-  attribute *attr; //= cluster.GetAttr(attr_id);
+  attribute *attr;
 
   Cluster on_off_clstr = end_point.GetCluster(ON_OFF_CLUSTER_ID);
-  attribute *on_off_attr = on_off_clstr.GetAttr(0x0000);
+  attribute *on_off_attr = on_off_clstr.GetAttr(CURRENT_STATE);
 
   Cluster lvl_clstr = end_point.GetCluster(LEVEL_CONTROL_CLUSTER_ID);
-  attribute *lvl_attr = lvl_clstr.GetAttr(0x0000);
+  attribute *lvl_attr = lvl_clstr.GetAttr(CURRENT_STATE);
   on_off_attr->SetValue(0x01);
   zha.sendAttributeWriteRsp(ON_OFF_CLUSTER_ID, on_off_attr, ep_id, 1, 0x01, rqst_seq_id);
 
@@ -171,10 +171,8 @@ void SetClrAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t color_x, uint16_t c
   {
     attr = cluster.GetAttr(ATTR_CURRENT_X);
     attr->SetValue(color_x);
-    //*attr->value = color_x;
     attr = cluster.GetAttr(ATTR_CURRENT_Y);
     attr->SetValue(color_y);
-    //*attr->value = color_y;
     set_led();
   }
   else
@@ -227,14 +225,13 @@ void loop()
 
     Endpoint door_end_point = zha.GetEndpoint(DOOR_ENDPOINT);
     Cluster door_cluster = door_end_point.GetCluster(BINARY_INPUT_CLUSTER_ID);
-    attribute *door_attr = door_cluster.GetAttr(0x0055);
+    attribute *door_attr = door_cluster.GetAttr(BINARY_PV_ATTR);
 
     Endpoint ias_end_point = zha.GetEndpoint(IAS_ENDPOINT);
     Cluster ias_cluster = ias_end_point.GetCluster(IAS_ZONE_CLUSTER_ID);
-    attribute *ias_attr = ias_cluster.GetAttr(0x0002);
+    attribute *ias_attr = ias_cluster.GetAttr(IAS_ZONE_STATUS);
     uint16_t ias_map_state = (uint16_t)ias_state << 1;
     uint16_t cur_ias_state = (uint16_t)ias_attr->GetIntValue();
-    //((uint16_t)ias_attr->value[1] << 8) | ias_attr->value[0];
 
     if (ias_map_state != cur_ias_state)
     {
@@ -244,8 +241,6 @@ void loop()
       Serial.print(cur_ias_state, HEX);
       Serial.print(F(" Now "));
       ias_attr->SetValue(ias_map_state);
-      // ias_attr->value[0] = ((uint16_t)ias_map_state >> 0) & 0xFF;
-      // ias_attr->value[1] = ((uint16_t)ias_map_state >> 8) & 0xFF;
       Serial.println(ias_map_state, HEX);
       zha.sendAttributeRpt(ias_cluster.id, ias_attr, ias_end_point.id, 1);
     }
@@ -257,7 +252,6 @@ void loop()
 
     if ((millis() - lastDoorDebounceTime) > debounceDelay)
     {
-      // if (door_state != *door_attr->value)
       if (door_state != door_attr->GetIntValue())
       {
         Serial.print(F("EP"));
@@ -265,7 +259,6 @@ void loop()
         Serial.print(F(": "));
         Serial.print(door_attr->GetIntValue());
         Serial.print(F(" Now "));
-        //*door_attr->value = door_state;
         door_attr->SetValue(door_state);
         Serial.println(door_attr->GetIntValue());
         zha.sendAttributeRpt(door_cluster.id, door_attr, door_end_point.id, 1);
@@ -336,8 +329,6 @@ void zdoReceive(ZBExplicitRxResponse &erx, uintptr_t)
           uint8_t len_data = erx.getDataLength() - 3;
           uint16_t attr_rqst[len_data / 2];
           uint8_t new_state = erx.getFrameData()[erx.getDataOffset() + 2];
-          // Serial.print(F("New State: "));
-          // Serial.println(new_state, HEX);
 
           for (uint8_t i = erx.getDataOffset(); i < (erx.getDataLength() + erx.getDataOffset() + 3); i++)
           {
@@ -345,7 +336,7 @@ void zdoReceive(ZBExplicitRxResponse &erx, uintptr_t)
             Serial.print(F(" "));
           }
           Serial.println();
-          SetLvlStAttr(ep, clId, 0x0000, new_state, erx.getFrameData()[erx.getDataOffset() + 1]);
+          SetLvlStAttr(ep, clId, CURRENT_STATE, new_state, erx.getFrameData()[erx.getDataOffset() + 1]);
         }
         if (clId == LEVEL_CONTROL_CLUSTER_ID)
         {
@@ -360,7 +351,7 @@ void zdoReceive(ZBExplicitRxResponse &erx, uintptr_t)
           Serial.println();
           Endpoint end_point = zha.GetEndpoint(ep);
 
-          SetLvlStAttr(ep, clId, 0x0000, erx.getFrameData()[3], erx.getFrameData()[erx.getDataOffset() + 1]);
+          SetLvlStAttr(ep, clId, CURRENT_STATE, erx.getFrameData()[3], erx.getFrameData()[erx.getDataOffset() + 1]);
         }
         if (clId == COLOR_CLUSTER_ID)
         {
@@ -384,22 +375,6 @@ void zdoReceive(ZBExplicitRxResponse &erx, uintptr_t)
       if (erx.getClusterId() == BASIC_CLUSTER_ID)
       {
         Serial.println(F("Basic Clstr"));
-        /*
-        uint8_t len_data = erx.getDataLength() - 3;
-        uint16_t attr_rqst[len_data / 2];
-
-        Endpoint end_point = zha.GetEndpoint(ep);
-        for (uint8_t i = erx.getDataOffset() + 3; i < (len_data + erx.getDataOffset() + 3); i += 2)
-        {
-          attr_rqst[i / 2] = (erx.getFrameData()[i + 1] << 8) |
-                             (erx.getFrameData()[i] & 0xff);
-          attribute *attr = end_point.GetCluster(erx.getClusterId()).GetAttr(attr_rqst[i / 2]);
-          Serial.print(F("Clstr Rd Att: "));
-          Serial.println(attr_rqst[i / 2]);
-          zha.sendAttributeRsp(erx.getClusterId(), attr, ep, ep, 0x01, zha.cmd_seq_id);
-          zha.cmd_seq_id++;
-        }
-        */
       }
     }
     else
