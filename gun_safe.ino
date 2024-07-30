@@ -256,7 +256,7 @@ void loop()
   if (zha.dev_status == READY)
   {
     
-    uint8_t door_state = digitalRead(DOOR_PIN) ^ 1;
+    uint8_t door_state = digitalRead(DOOR_PIN);
     uint8_t ias_state = digitalRead(VIBRATION_PIN);
 
     Endpoint light_end_point = zha.GetEndpoint(LIGHT_ENDPOINT);
