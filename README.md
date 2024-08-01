@@ -1,11 +1,12 @@
-xbee ZHA door bell.
+xbee ZHA safe controller.
 
-A ZHA door bell.
+
 
 Requires: (https://github.com/prairiesnpr/zha_arduino)
 
 Components:
 * 1 - Arduino Pro
 * 1 - XBee3
-* 1 - LTV816 Optocoupler
-* Others, it's been awhile...
+* 1 - DHT22
+* 1 - 802S Vibration Sensor
+* 4 - N Channel MOSFETs
