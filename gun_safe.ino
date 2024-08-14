@@ -57,7 +57,7 @@ void setup()
   pinMode(BLUE_PIN, OUTPUT);
   pinMode(GREEN_PIN, OUTPUT);
   pinMode(WHITE_PIN, OUTPUT);
-  
+
   digitalWrite(RED_PIN, 0);
   digitalWrite(GREEN_PIN, 0);
   digitalWrite(BLUE_PIN, 0);
@@ -71,10 +71,10 @@ void setup()
   Serial.println(F("Startup"));
   dht.begin();
   nss.begin(9600);
-  zha.Start(nss, zdoReceive, NUM_ENDPOINTS, ENDPOINTS);
+  zha.Start(nss, zhaClstrCmd, zhaWriteAttr, NUM_ENDPOINTS, ENDPOINTS);
 
-  // Set up callbacks
-  zha.registerCallbacks(atCmdResp, zbTxStatusResp, otherResp);
+  // Set up callbacks, shouldn't have to do this here, but bad design...
+  zha.registerCallbacks(atCmdResp, zbTxStatusResp, otherResp, zdoReceive);
 
   Serial.println(F("CB Conf"));
 
@@ -165,27 +165,27 @@ void set_led()
   Serial.print(F(" W: "));
   Serial.print(result.w, DEC);
   Serial.println();
-  if (on_off_attr->GetIntValue()) {
+  if (on_off_attr->GetIntValue())
+  {
     Serial.println(F("Apply RGB"));
-    result.r = pow(0xff, result.r/(float)0xff);
-    result.g = pow(0xff, result.g/(float)0xff);
-    result.b = pow(0xff, result.b/(float)0xff);
-    result.w = pow(0xff, result.w/(float)0xff);
+    result.r = pow(0xff, result.r / (float)0xff);
+    result.g = pow(0xff, result.g / (float)0xff);
+    result.b = pow(0xff, result.b / (float)0xff);
+    result.w = pow(0xff, result.w / (float)0xff);
 
     analogWrite(GREEN_PIN, result.g);
     analogWrite(BLUE_PIN, result.b);
     analogWrite(RED_PIN, result.r);
     analogWrite(WHITE_PIN, result.w);
   }
-  else {
+  else
+  {
     Serial.println(F("All LED OFF"));
     analogWrite(GREEN_PIN, 0);
     analogWrite(BLUE_PIN, 0);
     analogWrite(RED_PIN, 0);
     analogWrite(WHITE_PIN, 0);
-
   }
-
 }
 
 void SetClrAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t color_x, uint16_t color_y, uint8_t rqst_seq_id)
@@ -200,7 +200,7 @@ void SetClrAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t color_x, uint16_t c
   Cluster lvl_clstr = end_point.GetCluster(LEVEL_CONTROL_CLUSTER_ID);
   attribute *lvl_attr = lvl_clstr.GetAttr(CURRENT_STATE);
   on_off_attr->SetValue(0x01);
-  zha.sendAttributeWriteRsp(ON_OFF_CLUSTER_ID, on_off_attr, ep_id, 1, 0x01, rqst_seq_id);
+  zha.sendAttributeCmdRsp(ON_OFF_CLUSTER_ID, on_off_attr, ep_id, 1, 0x01, rqst_seq_id);
 
   Serial.print("Clstr: ");
   Serial.println(cluster_id, HEX);
@@ -229,7 +229,7 @@ void SetLvlStAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t attr_id, uint8_t 
   {
     if (value == 0x00 || value == 0x01)
     {
-      zha.sendAttributeWriteRsp(cluster_id, attr, ep_id, 1, value, rqst_seq_id);
+      zha.sendAttributeCmdRsp(cluster_id, attr, ep_id, 1, value, rqst_seq_id);
       attr->SetValue(value);
       set_led();
     }
@@ -240,7 +240,7 @@ void SetLvlStAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t attr_id, uint8_t 
   }
   else if (cluster_id == LEVEL_CONTROL_CLUSTER_ID)
   {
-    zha.sendAttributeWriteRsp(cluster_id, attr, ep_id, 1, value, rqst_seq_id);
+    zha.sendAttributeCmdRsp(cluster_id, attr, ep_id, 1, value, rqst_seq_id);
     attr->SetValue(value);
     set_led();
   }
@@ -249,13 +249,54 @@ void SetLvlStAttr(uint8_t ep_id, uint16_t cluster_id, uint16_t attr_id, uint8_t 
     Serial.print(F("Ukn SetAttr"));
   }
 }
+
+void send_inital_state()
+{
+  uint8_t door_state = digitalRead(DOOR_PIN);
+  uint8_t ias_state = digitalRead(VIBRATION_PIN);
+
+  Endpoint light_end_point = zha.GetEndpoint(LIGHT_ENDPOINT);
+  Cluster on_off_clstr = light_end_point.GetCluster(ON_OFF_CLUSTER_ID);
+  attribute *on_off_attr = on_off_clstr.GetAttr(CURRENT_STATE);
+
+  Endpoint door_end_point = zha.GetEndpoint(DOOR_ENDPOINT);
+  Cluster door_cluster = door_end_point.GetCluster(BINARY_INPUT_CLUSTER_ID);
+  attribute *door_attr = door_cluster.GetAttr(BINARY_PV_ATTR);
+
+  Endpoint ias_end_point = zha.GetEndpoint(IAS_ENDPOINT);
+  Cluster ias_cluster = ias_end_point.GetCluster(IAS_ZONE_CLUSTER_ID);
+  attribute *ias_attr = ias_cluster.GetAttr(IAS_ZONE_STATUS);
+  uint16_t ias_map_state = (uint16_t)ias_state << 1;
+  uint16_t cur_ias_state = (uint16_t)ias_attr->GetIntValue();
+
+  zha.sendAttributeRpt(door_cluster.id, door_attr, door_end_point.id, 1);
+  zha.sendAttributeRpt(ias_cluster.id, ias_attr, ias_end_point.id, 1);
+
+  Cluster color_cluster = light_end_point.GetCluster(COLOR_CLUSTER_ID);
+  attribute *color_x_attr = color_cluster.GetAttr(ATTR_CURRENT_X);
+  attribute *color_y_attr = color_cluster.GetAttr(ATTR_CURRENT_Y);
+
+  Cluster lvl_clstr = light_end_point.GetCluster(LEVEL_CONTROL_CLUSTER_ID);
+  attribute *lvl_attr = lvl_clstr.GetAttr(CURRENT_STATE);
+
+  // This should happen in device description, but not working
+  lvl_attr->SetValue(255);
+  color_x_attr->SetValue(21364);
+  color_y_attr->SetValue(21823);
+
+  zha.sendAttributeRpt(on_off_clstr.id, on_off_attr, light_end_point.id, 1);
+  zha.sendAttributeRpt(lvl_clstr.id, lvl_attr, light_end_point.id, 1);
+  zha.sendAttributeRpt(color_cluster.id, color_x_attr, light_end_point.id, 1);
+  zha.sendAttributeRpt(color_cluster.id, color_y_attr, light_end_point.id, 1);
+}
+
 void loop()
 {
   zha.loop();
 
   if (zha.dev_status == READY)
   {
-    
+
     uint8_t door_state = digitalRead(DOOR_PIN);
     uint8_t ias_state = digitalRead(VIBRATION_PIN);
 
@@ -272,7 +313,6 @@ void loop()
     attribute *ias_attr = ias_cluster.GetAttr(IAS_ZONE_STATUS);
     uint16_t ias_map_state = (uint16_t)ias_state << 1;
     uint16_t cur_ias_state = (uint16_t)ias_attr->GetIntValue();
-      
 
     if (ias_map_state != cur_ias_state)
     {
@@ -303,17 +343,18 @@ void loop()
         door_attr->SetValue(door_state);
         Serial.println(door_attr->GetIntValue());
 
-      
-        if (door_state) {
-         on_off_attr->SetValue(0x01); 
+        if (door_state)
+        {
+          on_off_attr->SetValue(0x01);
         }
-        else {
+        else
+        {
           on_off_attr->SetValue(0x00);
         }
 
         zha.sendAttributeRpt(door_cluster.id, door_attr, door_end_point.id, 1);
         zha.sendAttributeRpt(on_off_clstr.id, on_off_attr, light_end_point.id, 1);
-        set_led(); 
+        set_led();
       }
     }
 
@@ -321,27 +362,8 @@ void loop()
     if (!init_status_sent)
     {
       Serial.println(F("Snd Init States"));
+      send_inital_state();
       init_status_sent = 1;
-      zha.sendAttributeRpt(door_cluster.id, door_attr, door_end_point.id, 1);
-      zha.sendAttributeRpt(ias_cluster.id, ias_attr, ias_end_point.id, 1);
-
-      Cluster color_cluster = light_end_point.GetCluster(COLOR_CLUSTER_ID);
-      attribute *color_x_attr = color_cluster.GetAttr(ATTR_CURRENT_X);
-      attribute *color_y_attr = color_cluster.GetAttr(ATTR_CURRENT_Y);
-
-
-      Cluster lvl_clstr = light_end_point.GetCluster(LEVEL_CONTROL_CLUSTER_ID);
-      attribute *lvl_attr = lvl_clstr.GetAttr(CURRENT_STATE);
-
-      //This should happen in device description, but not working
-      lvl_attr->SetValue(255);
-      color_x_attr->SetValue(21364);
-      color_y_attr->SetValue(21823);
-
-      zha.sendAttributeRpt(on_off_clstr.id, on_off_attr, light_end_point.id, 1);
-      zha.sendAttributeRpt(lvl_clstr.id, lvl_attr, light_end_point.id, 1);
-      zha.sendAttributeRpt(color_cluster.id, color_x_attr, light_end_point.id, 1);
-      zha.sendAttributeRpt(color_cluster.id, color_y_attr, light_end_point.id, 1);
     }
   }
   else if ((loop_time - last_msg_time) > 1000)
@@ -352,6 +374,11 @@ void loop()
     Serial.println(START_LOOPS);
 
     last_msg_time = millis();
+    if (start_fails > 15)
+    {
+      // Sometimes we don't get a response from dev ann, try a transmit and see if we are good
+      send_inital_state();
+    }
     if (start_fails > START_LOOPS)
     {
       resetFunc();
@@ -364,166 +391,74 @@ void loop()
   loop_time = millis();
 }
 
-void zdoReceive(ZBExplicitRxResponse &erx, uintptr_t)
+void zhaWriteAttr(ZBExplicitRxResponse &erx)
 {
-  // Create a reply packet containing the same data
-  // This directly reuses the rx data array, which is ok since the tx
-  // packet is sent before any new response is received
 
-  if (erx.getRemoteAddress16() == 0)
+  Serial.println(F("Write Cmd"));
+  // No supported attributes
+}
+
+void zhaClstrCmd(ZBExplicitRxResponse &erx)
+{
+  Serial.println(F("Clstr Cmd"));
+  if (erx.getDstEndpoint() == DOOR_ENDPOINT)
   {
-    zha.cmd_seq_id = erx.getFrameData()[erx.getDataOffset() + 1];
-    Serial.print(F("Cmd Seq: "));
-    Serial.println(zha.cmd_seq_id);
-
-    uint8_t ep = erx.getDstEndpoint();
-    uint16_t clId = erx.getClusterId();
-    uint8_t cmd_id = erx.getFrameData()[erx.getDataOffset() + 2];
-    uint8_t frame_type = erx.getFrameData()[erx.getDataOffset()] & 0x03;
-    if (frame_type)
+    Serial.println(F("Door Ep"));
+  }
+  else if (erx.getDstEndpoint() == TEMP_ENDPOINT)
+  {
+    Serial.println(F("Temp Ep"));
+  }
+  else if (erx.getDstEndpoint() == IAS_ENDPOINT)
+  {
+    Serial.println(F("IAS Ep"));
+  }
+  else if (erx.getDstEndpoint() == LIGHT_ENDPOINT)
+  {
+    Serial.println(F("Light Ep"));
+    if (erx.getClusterId() == ON_OFF_CLUSTER_ID)
     {
-      Serial.println(F("Clstr Cmd"));
-      if (ep == DOOR_ENDPOINT)
-      {
-        Serial.println(F("Door Ep"));
-      }
-      else if (ep == TEMP_ENDPOINT)
-      {
-        Serial.println(F("Temp Ep"));
-      }
-      else if (ep == IAS_ENDPOINT)
-      {
-        Serial.println(F("IAS Ep"));
-      }
-      else if (ep == LIGHT_ENDPOINT)
-      {
-        Serial.println(F("Light Ep"));
-        if (clId == ON_OFF_CLUSTER_ID)
-        {
-          Serial.println(F("ON/OFF"));
-          Endpoint end_point = zha.GetEndpoint(ep);
-          // Cluster Command, so it's a write command
-          uint8_t len_data = erx.getDataLength() - 3;
-          uint16_t attr_rqst[len_data / 2];
-          uint8_t new_state = erx.getFrameData()[erx.getDataOffset() + 2];
+      Serial.println(F("ON/OFF"));
+      uint8_t new_state = erx.getFrameData()[erx.getDataOffset() + 2];
 
-          for (uint8_t i = erx.getDataOffset(); i < (erx.getDataLength() + erx.getDataOffset() + 3); i++)
-          {
-            Serial.print(erx.getFrameData()[i], HEX);
-            Serial.print(F(" "));
-          }
-          Serial.println();
-          SetLvlStAttr(ep, clId, CURRENT_STATE, new_state, erx.getFrameData()[erx.getDataOffset() + 1]);
-        }
-        if (clId == LEVEL_CONTROL_CLUSTER_ID)
-        {
-          Serial.println(F("Lt Lvl"));
-          uint8_t len_data = erx.getDataLength() - 3;
-          uint16_t attr_rqst[len_data / 2];
-          for (uint8_t i = erx.getDataOffset(); i < (erx.getDataLength() + erx.getDataOffset() + 3); i++)
-          {
-            Serial.print(erx.getFrameData()[i], HEX);
-            Serial.print(F(" "));
-          }
-          Serial.println();
-          uint8_t new_state = erx.getFrameData()[erx.getDataOffset() + 3];
-          Endpoint end_point = zha.GetEndpoint(ep);
-
-          SetLvlStAttr(ep, clId, CURRENT_STATE, new_state, erx.getFrameData()[erx.getDataOffset() + 1]);
-        }
-        if (clId == COLOR_CLUSTER_ID)
-        {
-          Serial.println(F("Clr"));
-          uint8_t len_data = erx.getDataLength() - 3;
-          uint16_t attr_rqst[len_data / 2];
-
-          for (uint8_t i = erx.getDataOffset(); i < (erx.getDataLength() + erx.getDataOffset() + 3); i++)
-          {
-            Serial.print(erx.getFrameData()[i], HEX);
-            Serial.print(F(" "));
-          }
-          Serial.println();
-          Endpoint end_point = zha.GetEndpoint(ep);
-          uint16_t color_x = ((uint16_t)erx.getFrameData()[21] << 8) | erx.getFrameData()[20];
-          uint16_t color_y = ((uint16_t)erx.getFrameData()[23] << 8) | erx.getFrameData()[22];
-          SetClrAttr(ep, clId, color_x, color_y, erx.getFrameData()[erx.getDataOffset() + 1]);
-        }
-      }
-
-      if (erx.getClusterId() == BASIC_CLUSTER_ID)
+      for (uint8_t i = erx.getDataOffset(); i < (erx.getDataLength() + erx.getDataOffset() + 3); i++)
       {
-        Serial.println(F("Basic Clstr"));
+        Serial.print(erx.getFrameData()[i], HEX);
+        Serial.print(F(" "));
       }
+      Serial.println();
+      SetLvlStAttr(erx.getDstEndpoint(), erx.getClusterId(), CURRENT_STATE, new_state, erx.getFrameData()[erx.getDataOffset() + 1]);
     }
-    else
+    if (erx.getClusterId() == LEVEL_CONTROL_CLUSTER_ID)
     {
-      Serial.println(F("Glbl Cmd"));
-
-      Endpoint end_point = zha.GetEndpoint(ep);
-      Cluster cluster = end_point.GetCluster(clId);
-      if (cmd_id == 0x00)
+      Serial.println(F("Lt Lvl"));
+      for (uint8_t i = erx.getDataOffset(); i < (erx.getDataLength() + erx.getDataOffset() + 3); i++)
       {
-        // Read attributes
-        Serial.println(F("Read Attr"));
-        uint8_t len_data = erx.getDataLength() - 3;
-        uint16_t attr_rqst[len_data / 2];
-        for (uint8_t i = erx.getDataOffset() + 3; i < (len_data + erx.getDataOffset() + 3); i += 2)
-        {
-          attr_rqst[i / 2] = (erx.getFrameData()[i + 1] << 8) |
-                             (erx.getFrameData()[i] & 0xff);
-          attribute *attr = end_point.GetCluster(erx.getClusterId()).GetAttr(attr_rqst[i / 2]);
-          Serial.print(F("Clstr Rd Att: "));
-          Serial.println(attr_rqst[i / 2]);
-          zha.sendAttributeRsp(erx.getClusterId(), attr, ep, 0x01, 0x01, zha.cmd_seq_id);
-          zha.cmd_seq_id++;
-        }
+        Serial.print(erx.getFrameData()[i], HEX);
+        Serial.print(F(" "));
       }
-      else
-      {
-        Serial.println(F("Not Read Attr"));
-      }
-    }
-    uint8_t frame_direction = (erx.getFrameData()[erx.getDataOffset()] >> 3) & 1;
-    if (frame_direction)
-    {
-      Serial.println(F("Srv to Client"));
-    }
-    else
-    {
-      Serial.println(F("Client to Srv"));
-    }
-    Serial.print(F("ZDO: EP: "));
-    Serial.print(ep);
-    Serial.print(F(", Clstr: "));
-    Serial.print(clId, HEX);
-    Serial.print(F(" Cmd Id: "));
-    Serial.print(cmd_id, HEX);
-    Serial.print(F(" FrmCtl: "));
-    Serial.println(erx.getFrameData()[erx.getDataOffset()], BIN);
-    /*
-    for (uint8_t i = 0; i<erx.getFrameDataLength(); i++) {
-      Serial.print(erx.getFrameData()[i], HEX);
-      Serial.print(F(" "));
-    }
-    Serial.println();
-    */
+      Serial.println();
+      uint8_t new_state = erx.getFrameData()[erx.getDataOffset() + 3];
 
-    if (erx.getClusterId() == ACTIVE_EP_RQST)
-    {
-      // Have to match sequence number in response
-      cmd_result = NULL;
-      zha.last_seq_id = erx.getFrameData()[erx.getDataOffset()];
-      zha.sendActiveEpResp(zha.last_seq_id);
+      SetLvlStAttr(erx.getDstEndpoint(), erx.getClusterId(), CURRENT_STATE, new_state, erx.getFrameData()[erx.getDataOffset() + 1]);
     }
-    if (erx.getClusterId() == SIMPLE_DESC_RQST)
+    if (erx.getClusterId() == COLOR_CLUSTER_ID)
     {
-      Serial.print("Simple Desc Rqst, Ep: ");
-      // Have to match sequence number in response
-      // Payload is EndPoint
-      // Can this just be regular ep?
-      uint8_t ep_msg = erx.getFrameData()[erx.getDataOffset() + 3];
-      Serial.println(ep_msg, HEX);
-      zha.sendSimpleDescRpt(ep_msg, erx.getFrameData()[erx.getDataOffset()]);
+      Serial.println(F("Clr"));
+      for (uint8_t i = erx.getDataOffset(); i < (erx.getDataLength() + erx.getDataOffset() + 3); i++)
+      {
+        Serial.print(erx.getFrameData()[i], HEX);
+        Serial.print(F(" "));
+      }
+      Serial.println();
+      uint16_t color_x = ((uint16_t)erx.getFrameData()[21] << 8) | erx.getFrameData()[20];
+      uint16_t color_y = ((uint16_t)erx.getFrameData()[23] << 8) | erx.getFrameData()[22];
+      SetClrAttr(erx.getDstEndpoint(), erx.getClusterId(), color_x, color_y, erx.getFrameData()[erx.getDataOffset() + 1]);
     }
+  }
+
+  if (erx.getClusterId() == BASIC_CLUSTER_ID)
+  {
+    Serial.println(F("Basic Clstr"));
   }
 }

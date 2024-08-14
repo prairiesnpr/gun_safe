@@ -2,53 +2,87 @@
 
 #define NUM_ENDPOINTS 4
 
-static uint8_t *manuf = (uint8_t *)"iSilentLLC";
+
+constexpr uint8_t one_zero_byte[] = {0x00};
+constexpr uint8_t one_max_byte[] = {0xFF};
+constexpr uint8_t two_zero_byte[] = {0x00, 0x00};
+constexpr uint8_t four_zero_byte[] = {0x00, 0x00, 0x00, 0x00};
+constexpr uint8_t init_color_x[] = {0x74, 0x53};
+constexpr uint8_t init_color_y[] = {0x3F, 0x55};
+constexpr uint8_t vib_zone_type[] ={0x2D, 0x00};
+
+constexpr char manufacturer[]  = "iSilentLLC";
+constexpr char safe_model[] = "Safe";
+constexpr char temp_model[] = "Temp & Humidity";
+constexpr char alarm_model[] = "Alarm";
+constexpr char light_model[] = "Light";
+
+attribute BuildStringAtt(uint16_t a_id, char *value, uint8_t size, uint8_t a_type)
+{
+    uint8_t *value_t = (uint8_t *)value;
+    return attribute(a_id, value_t, size, a_type, 0x01);
+}
+
+attribute manuf_attr = BuildStringAtt(MANUFACTURER_ATTR, const_cast<char *>(manufacturer), sizeof(manufacturer), ZCL_CHAR_STR);
+attribute safe_model_attr = BuildStringAtt(MODEL_ATTR, const_cast<char *>(safe_model), sizeof(safe_model), ZCL_CHAR_STR);
+attribute temp_model_attr = BuildStringAtt(MODEL_ATTR, const_cast<char *>(temp_model), sizeof(temp_model), ZCL_CHAR_STR);
+attribute alarm_model_attr = BuildStringAtt(MODEL_ATTR, const_cast<char *>(alarm_model), sizeof(alarm_model), ZCL_CHAR_STR);
+attribute light_model_attr = BuildStringAtt(MODEL_ATTR, const_cast<char *>(light_model), sizeof(light_model), ZCL_CHAR_STR);
+
 static attribute door_basic_attr[]{
-    {MANUFACTURER_ATTR, manuf, 10, ZCL_CHAR_STR},
-    {MODEL_ATTR, (uint8_t *)"Safe", 4, ZCL_CHAR_STR}};
+    manuf_attr,
+    safe_model_attr};
+
 static attribute temp_basic_attr[]{
-    {MANUFACTURER_ATTR, manuf, 10, ZCL_CHAR_STR},
-    {MODEL_ATTR, (uint8_t *)"Temp", 4, ZCL_CHAR_STR}};
+    manuf_attr,
+    temp_model_attr};
+
 static attribute vibration_basic_attr[]{
-    {MANUFACTURER_ATTR, manuf, 10, ZCL_CHAR_STR},
-    {MODEL_ATTR, (uint8_t *)"Alarm", 5, ZCL_CHAR_STR}};
+    manuf_attr,
+    alarm_model_attr};
+
 static attribute light_basic_attr[]{
-    {MANUFACTURER_ATTR, manuf, 10, ZCL_CHAR_STR},
-    {MODEL_ATTR, (uint8_t *)"Light", 5, ZCL_CHAR_STR}};
+    manuf_attr,
+    light_model_attr};
 
 static attribute door_attr[] = {
-    {BINARY_PV_ATTR, 0x00, 1, ZCL_BOOL},  // present value
-    {BINARY_STATUS_FLG, 0x0, 1, ZCL_MAP8} // Status flags
+    {BINARY_PV_ATTR, const_cast<uint8_t *>(one_zero_byte), 1, ZCL_BOOL},  // present value
+    {BINARY_STATUS_FLG, const_cast<uint8_t *>(one_zero_byte), 1, ZCL_MAP8, 0x01} // Status flags
 };
 static attribute light_bool_attr[]{
-    {CURRENT_STATE, 0x00, 1, ZCL_BOOL}};
+    {CURRENT_STATE, const_cast<uint8_t *>(one_zero_byte), 1, ZCL_BOOL}};
+
 static attribute light_level_attr[]{
-    {CURRENT_STATE, 0xFF, 1, ZCL_UINT8_T}};
+    {CURRENT_STATE, const_cast<uint8_t *>(one_max_byte), 1, ZCL_UINT8_T}};
+
 static attribute light_color_attr[] = {
-    {ATTR_CURRENT_X, 21364, 2, ZCL_UINT16_T},      // CurrentX
-    {ATTR_CURRENT_Y, 21823, 2, ZCL_UINT16_T},      // CurrentY
-    {ATTR_CURRENT_CT_MRDS, 0x00, 2, ZCL_UINT16_T} // ColorTemperatureMireds
+    {ATTR_CURRENT_X, const_cast<uint8_t *>(init_color_x), 2, ZCL_UINT16_T},      // CurrentX
+    {ATTR_CURRENT_Y, const_cast<uint8_t *>(init_color_y), 2, ZCL_UINT16_T},      // CurrentY
+    {ATTR_CURRENT_CT_MRDS, const_cast<uint8_t *>(two_zero_byte), 2, ZCL_UINT16_T, 0x01} // ColorTemperatureMireds
 };
 static attribute vibration_attr[]{
-    {IAS_ZONE_STATE, 0x00, 1, ZCL_ENUM8},                // ZoneState
-    {IAS_ZONE_TYPE, 0x002d, 2, ZCL_ENUM16},              // ZoneType, Vibration
-    {IAS_ZONE_STATUS, 0b0000000000000000, 2, ZCL_MAP16}, // ZoneStatus
+    {IAS_ZONE_STATE, const_cast<uint8_t *>(one_zero_byte), 1, ZCL_ENUM8},                // ZoneState
+    {IAS_ZONE_TYPE, const_cast<uint8_t *>(vib_zone_type), 2, ZCL_ENUM16, 0x01},              // ZoneType, Vibration
+    {IAS_ZONE_STATUS, const_cast<uint8_t *>(two_zero_byte), 2, ZCL_MAP16}, // ZoneStatus
 };
-static attribute temp_attr[] = {{CURRENT_STATE, 0x00, 2, ZCL_INT16_T}};
-static attribute humid_attr[] = {{CURRENT_STATE, 0x00, 2, ZCL_UINT16_T}};
+static attribute temp_attr[] = {{CURRENT_STATE, const_cast<uint8_t *>(two_zero_byte), 2, ZCL_INT16_T}};
+static attribute humid_attr[] = {{CURRENT_STATE, const_cast<uint8_t *>(two_zero_byte), 2, ZCL_UINT16_T}};
 
 static Cluster door_in_clusters[] = {
     Cluster(BASIC_CLUSTER_ID, door_basic_attr, sizeof(door_basic_attr) / sizeof(*door_basic_attr)),
     Cluster(BINARY_INPUT_CLUSTER_ID, door_attr, sizeof(door_attr) / sizeof(*door_attr))};
+
 static Cluster vibration_in_clusters[] = {
     Cluster(BASIC_CLUSTER_ID, vibration_basic_attr, sizeof(vibration_basic_attr) / sizeof(*vibration_basic_attr)),
     Cluster(IAS_ZONE_CLUSTER_ID, vibration_attr, sizeof(vibration_attr) / sizeof(*vibration_attr))};
+
 static Cluster light_in_clusters[] = {
     Cluster(BASIC_CLUSTER_ID, light_basic_attr, sizeof(light_basic_attr) / sizeof(*light_basic_attr)),
     Cluster(ON_OFF_CLUSTER_ID, light_bool_attr, sizeof(light_bool_attr) / sizeof(*light_bool_attr)),
     Cluster(LEVEL_CONTROL_CLUSTER_ID, light_level_attr, sizeof(light_level_attr) / sizeof(*light_level_attr)),
     Cluster(COLOR_CLUSTER_ID, light_color_attr, sizeof(light_color_attr) / sizeof(*light_color_attr)),
 };
+
 static Cluster t_in_clusters[] = {
     Cluster(BASIC_CLUSTER_ID, temp_basic_attr, sizeof(temp_basic_attr) / sizeof(*temp_basic_attr)),
     Cluster(TEMP_CLUSTER_ID, temp_attr, sizeof(temp_attr) / sizeof(*temp_attr)),
